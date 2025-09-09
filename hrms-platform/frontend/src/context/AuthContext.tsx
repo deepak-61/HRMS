@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
 import { AuthUser, Employee } from '../types';
 import { apiService } from '../services/api';
+import { getUserRole } from '../utils/roleUtils';
 
 interface AuthState {
   user: AuthUser | null;
@@ -118,6 +119,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         email: employee.email,
         department: employee.department,
         position: employee.position,
+        role: getUserRole(employee.position),
       };
 
       localStorage.setItem('token', token);

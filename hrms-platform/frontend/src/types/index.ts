@@ -64,6 +64,7 @@ export interface AuthUser {
   email: string;
   department: string;
   position: string;
+  role: 'admin' | 'hr_manager' | 'employee';
 }
 
 export interface AuthResponse {

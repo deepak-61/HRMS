@@ -12,7 +12,7 @@ const Employees: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [selectedDepartment, setSelectedDepartment] = useState('');
 
-  const isHRManager = user?.position?.toLowerCase().includes('hr') || user?.position?.toLowerCase() === 'admin';
+  const canManageEmployees = user?.role === 'admin' || user?.role === 'hr_manager';
 
   useEffect(() => {
     fetchEmployees();
@@ -51,7 +51,7 @@ const Employees: React.FC = () => {
             A list of all employees in your organization including their name, title, email and role.
           </p>
         </div>
-        {isHRManager && (
+        {canManageEmployees && (
           <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
             <button
               type="button"
@@ -141,7 +141,7 @@ const Employees: React.FC = () => {
                       </p>
                     )}
                   </div>
-                  {isHRManager && (
+                  {canManageEmployees && (
                     <div className="ml-4 flex items-center space-x-2">
                       <button className="text-primary-600 hover:text-primary-900">
                         <PencilIcon className="h-4 w-4" />

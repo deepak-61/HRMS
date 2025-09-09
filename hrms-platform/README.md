@@ -64,7 +64,7 @@ This HRMS platform demonstrates production-ready engineering practices with:
    - Frontend: http://localhost:3000
 
 4. **Access the application**
-   - Frontend: http://localhost:3000
+   - Frontend: http://localhost:3000 (Role-based dashboards)
    - API Documentation: 
      - Employee Service: http://localhost:3001/api-docs
      - HR Operations Service: http://localhost:3002/api-docs
@@ -99,17 +99,19 @@ This HRMS platform demonstrates production-ready engineering practices with:
    npm start
    ```
 
-## 📊 Demo Accounts
+## 📊 Demo Accounts - Role-Based Dashboards
 
-Use these pre-seeded accounts to test the system:
+Each login redirects to a different dashboard based on user role:
 
-| Role | Email | Password | Description |
-|------|-------|----------|-------------|
-| Admin | admin@company.com | password123 | Full system access |
-| HR Manager | jane.smith@company.com | password123 | HR operations access |
-| Employee | john.doe@company.com | password123 | Employee self-service |
-| Employee | mike.johnson@company.com | password123 | Finance department |
-| Employee | sarah.wilson@company.com | password123 | Marketing department |
+| Role | Email | Password | Dashboard Features |
+|------|-------|----------|-------------------|
+| 👑 **Administrator** | admin@company.com | password123 | **Full System Control**<br/>• All employee management<br/>• System settings & analytics<br/>• User management<br/>• Audit logs & advanced reports |
+| 👥 **HR Manager** | jane.smith@company.com | password123 | **HR Operations**<br/>• Employee management<br/>• Leave request approvals<br/>• Attendance reports<br/>• Recruitment & performance |
+| 👤 **Employee** | john.doe@company.com | password123 | **Self-Service Portal**<br/>• Personal dashboard<br/>• Leave requests<br/>• Attendance tracking<br/>• Profile management |
+| 👤 **Employee** | mike.johnson@company.com | password123 | Finance department employee |
+| 👤 **Employee** | sarah.wilson@company.com | password123 | Marketing department employee |
+
+> **Note**: The system automatically detects user role and redirects to the appropriate dashboard with role-specific navigation and features.
 
 ## 🏢 Features Implemented
 
@@ -134,12 +136,13 @@ Use these pre-seeded accounts to test the system:
 - Monthly attendance summaries
 - Late arrival tracking
 
-### ✅ Modern Frontend
-- Responsive React TypeScript dashboard
-- Tailwind CSS for modern styling
-- Protected routes with authentication
-- Error handling and loading states
-- Context API for state management
+### ✅ Role-Based Frontend System
+- **🎯 Smart Role Detection**: Automatic role assignment based on position
+- **📱 Role-Specific Dashboards**: Different layouts and navigation for each role
+- **🔐 Granular Access Control**: Role-based permissions and feature access
+- **🎨 Modern UI/UX**: Responsive React TypeScript with Tailwind CSS
+- **⚡ Context API State Management**: Efficient authentication and user state
+- **🛡️ Protected Routes**: Authentication-based route protection
 
 ### ✅ Production-Ready Backend
 - Microservices architecture with service communication
