@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import { globalErrorHandler } from './middleware/errorHandler';
 import { logger } from './utils/logger';
 import { setupSwagger } from './config/swagger';
+import './config/prisma'; // Initialize Prisma connection
 import authRoutes from './routes/authRoutes';
 import employeeRoutes from './routes/employeeRoutes';
 

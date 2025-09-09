@@ -1,244 +1,292 @@
-import pool from '../config/database';
-import { Employee, EmployeeInput, EmployeeUpdate } from '../models/employee';
+import { Employee, EmployeeStatus, Prisma } from '@prisma/client';
+import prisma from '../config/prisma';
+import { EmployeeInput, EmployeeUpdate } from '../models/employee';
 import { AppError } from '../middleware/errorHandler';
 import { logger } from '../utils/logger';
 import bcrypt from 'bcryptjs';
 
+export type EmployeeWithoutPassword = Omit<Employee, 'passwordHash'>;
+
 export class EmployeeService {
-  async createEmployee(employeeData: EmployeeInput & { password: string }): Promise<Employee> {
-    const client = await pool.connect();
-    
+  async createEmployee(employeeData: EmployeeInput & { password: string }): Promise<EmployeeWithoutPassword> {
     try {
-      await client.query('BEGIN');
-      
       // Hash password
       const hashedPassword = await bcrypt.hash(employeeData.password, 12);
       
       // Check if email already exists
-      const existingEmployee = await client.query(
-        'SELECT id FROM employees WHERE email = $1',
-        [employeeData.email]
-      );
+      const existingEmployee = await prisma.employee.findUnique({
+        where: { email: employeeData.email }
+      });
       
-      if (existingEmployee.rows.length > 0) {
+      if (existingEmployee) {
         throw new AppError('Employee with this email already exists', 400);
       }
       
-      const query = `
-        INSERT INTO employees (
-          first_name, last_name, email, phone, department, position, 
-          salary, hire_date, status, manager_id, password_hash, address
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-        RETURNING *
-      `;
-      
-      const values = [
-        employeeData.firstName,
-        employeeData.lastName,
-        employeeData.email,
-        employeeData.phone,
-        employeeData.department,
-        employeeData.position,
-        employeeData.salary,
-        employeeData.hireDate,
-        employeeData.status || 'active',
-        employeeData.managerId || null,
-        hashedPassword,
-        JSON.stringify(employeeData.address || {})
-      ];
-      
-      const result = await client.query(query, values);
-      await client.query('COMMIT');
+      const employee = await prisma.employee.create({
+        data: {
+          firstName: employeeData.firstName,
+          lastName: employeeData.lastName,
+          email: employeeData.email,
+          phone: employeeData.phone,
+          department: employeeData.department,
+          position: employeeData.position,
+          salary: employeeData.salary,
+          hireDate: new Date(employeeData.hireDate),
+          status: employeeData.status ? this.mapStatusToEnum(employeeData.status) : EmployeeStatus.ACTIVE,
+          managerId: employeeData.managerId || null,
+          passwordHash: hashedPassword,
+          address: employeeData.address || Prisma.JsonNull
+        }
+      });
       
       logger.info(`Employee created: ${employeeData.email}`);
-      return this.mapDbRowToEmployee(result.rows[0]);
+      return this.excludePassword(employee);
       
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
+    } catch (error: any) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new AppError('Employee with this email already exists', 400);
+        }
+      }
+      throw error instanceof AppError ? error : new AppError('Failed to create employee', 500);
     }
   }
 
-  async getEmployeeById(id: number): Promise<Employee | null> {
-    const query = 'SELECT * FROM employees WHERE id = $1 AND status != $2';
-    const result = await pool.query(query, [id, 'terminated']);
+  async getEmployeeById(id: number): Promise<EmployeeWithoutPassword | null> {
+    const employee = await prisma.employee.findFirst({
+      where: {
+        id,
+        status: { not: EmployeeStatus.TERMINATED }
+      },
+      include: {
+        manager: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            position: true
+          }
+        }
+      }
+    });
     
-    if (result.rows.length === 0) {
+    if (!employee) {
       return null;
     }
     
-    return this.mapDbRowToEmployee(result.rows[0]);
+    return this.excludePassword(employee);
   }
 
-  async getEmployeeByEmail(email: string): Promise<Employee | null> {
-    const query = 'SELECT * FROM employees WHERE email = $1 AND status != $2';
-    const result = await pool.query(query, [email, 'terminated']);
+  async getEmployeeByEmail(email: string): Promise<EmployeeWithoutPassword | null> {
+    const employee = await prisma.employee.findFirst({
+      where: {
+        email,
+        status: { not: EmployeeStatus.TERMINATED }
+      }
+    });
     
-    if (result.rows.length === 0) {
+    if (!employee) {
       return null;
     }
     
-    return this.mapDbRowToEmployee(result.rows[0]);
+    return this.excludePassword(employee);
   }
 
   async getAllEmployees(page: number = 1, limit: number = 10, department?: string): Promise<{
-    employees: Employee[];
+    employees: EmployeeWithoutPassword[];
     total: number;
     page: number;
     totalPages: number;
   }> {
-    const offset = (page - 1) * limit;
-    let query = 'SELECT * FROM employees WHERE status != $1';
-    let countQuery = 'SELECT COUNT(*) FROM employees WHERE status != $1';
-    const params: any[] = ['terminated'];
+    const skip = (page - 1) * limit;
+    
+    const where: Prisma.EmployeeWhereInput = {
+      status: { not: EmployeeStatus.TERMINATED }
+    };
     
     if (department) {
-      query += ' AND department = $2';
-      countQuery += ' AND department = $2';
-      params.push(department);
+      where.department = department;
     }
     
-    query += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
-    params.push(limit, offset);
-    
-    const [employeesResult, countResult] = await Promise.all([
-      pool.query(query, params),
-      pool.query(countQuery, params.slice(0, -2)) // Remove limit and offset for count
+    const [employees, total] = await Promise.all([
+      prisma.employee.findMany({
+        where,
+        include: {
+          manager: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              position: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit
+      }),
+      prisma.employee.count({ where })
     ]);
     
-    const employees = employeesResult.rows.map(row => this.mapDbRowToEmployee(row));
-    const total = parseInt(countResult.rows[0].count);
     const totalPages = Math.ceil(total / limit);
     
     return {
-      employees,
+      employees: employees.map(emp => this.excludePassword(emp)),
       total,
       page,
       totalPages
     };
   }
 
-  async updateEmployee(id: number, updateData: EmployeeUpdate): Promise<Employee | null> {
-    const client = await pool.connect();
-    
+  async updateEmployee(id: number, updateData: EmployeeUpdate): Promise<EmployeeWithoutPassword | null> {
     try {
-      await client.query('BEGIN');
-      
       // Check if employee exists
-      const existingEmployee = await client.query(
-        'SELECT id FROM employees WHERE id = $1 AND status != $2',
-        [id, 'terminated']
-      );
-      
-      if (existingEmployee.rows.length === 0) {
-        return null;
-      }
-      
-      // Build dynamic update query
-      const updateFields: string[] = [];
-      const values: any[] = [];
-      let paramCount = 1;
-      
-      Object.entries(updateData).forEach(([key, value]) => {
-        if (value !== undefined) {
-          const dbField = this.camelToSnakeCase(key);
-          if (key === 'address') {
-            updateFields.push(`${dbField} = $${paramCount}`);
-            values.push(JSON.stringify(value));
-          } else {
-            updateFields.push(`${dbField} = $${paramCount}`);
-            values.push(value);
-          }
-          paramCount++;
+      const existingEmployee = await prisma.employee.findFirst({
+        where: {
+          id,
+          status: { not: EmployeeStatus.TERMINATED }
         }
       });
       
-      if (updateFields.length === 0) {
-        throw new AppError('No valid fields to update', 400);
+      if (!existingEmployee) {
+        return null;
       }
       
-      updateFields.push(`updated_at = NOW()`);
-      values.push(id);
+      // Prepare update data
+      const data: Prisma.EmployeeUpdateInput = {};
       
-      const query = `
-        UPDATE employees 
-        SET ${updateFields.join(', ')}
-        WHERE id = $${paramCount}
-        RETURNING *
-      `;
+      if (updateData.firstName) data.firstName = updateData.firstName;
+      if (updateData.lastName) data.lastName = updateData.lastName;
+      if (updateData.email) data.email = updateData.email;
+      if (updateData.phone) data.phone = updateData.phone;
+      if (updateData.department) data.department = updateData.department;
+      if (updateData.position) data.position = updateData.position;
+      if (updateData.salary !== undefined) data.salary = updateData.salary;
+      if (updateData.hireDate) data.hireDate = new Date(updateData.hireDate);
+      if (updateData.status) data.status = this.mapStatusToEnum(updateData.status);
+      if (updateData.managerId !== undefined) data.managerId = updateData.managerId;
+      if (updateData.address !== undefined) data.address = updateData.address || Prisma.JsonNull;
       
-      const result = await client.query(query, values);
-      await client.query('COMMIT');
+      const updatedEmployee = await prisma.employee.update({
+        where: { id },
+        data,
+        include: {
+          manager: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              position: true
+            }
+          }
+        }
+      });
       
       logger.info(`Employee updated: ID ${id}`);
-      return this.mapDbRowToEmployee(result.rows[0]);
+      return this.excludePassword(updatedEmployee);
       
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
+    } catch (error: any) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new AppError('Employee with this email already exists', 400);
+        }
+      }
+      throw error instanceof AppError ? error : new AppError('Failed to update employee', 500);
     }
   }
 
   async deleteEmployee(id: number): Promise<boolean> {
-    const query = `
-      UPDATE employees 
-      SET status = 'terminated', updated_at = NOW()
-      WHERE id = $1 AND status != 'terminated'
-      RETURNING id
-    `;
-    
-    const result = await pool.query(query, [id]);
-    
-    if (result.rows.length === 0) {
-      return false;
+    try {
+      const updatedEmployee = await prisma.employee.updateMany({
+        where: {
+          id,
+          status: { not: EmployeeStatus.TERMINATED }
+        },
+        data: {
+          status: EmployeeStatus.TERMINATED
+        }
+      });
+      
+      if (updatedEmployee.count === 0) {
+        return false;
+      }
+      
+      logger.info(`Employee soft deleted: ID ${id}`);
+      return true;
+      
+    } catch (error) {
+      throw new AppError('Failed to delete employee', 500);
     }
-    
-    logger.info(`Employee soft deleted: ID ${id}`);
-    return true;
   }
 
-  async validatePassword(email: string, password: string): Promise<Employee | null> {
-    const query = 'SELECT * FROM employees WHERE email = $1 AND status = $2';
-    const result = await pool.query(query, [email, 'active']);
+  async validatePassword(email: string, password: string): Promise<EmployeeWithoutPassword | null> {
+    const employee = await prisma.employee.findFirst({
+      where: {
+        email,
+        status: EmployeeStatus.ACTIVE
+      }
+    });
     
-    if (result.rows.length === 0) {
+    if (!employee) {
       return null;
     }
     
-    const employee = result.rows[0];
-    const isValidPassword = await bcrypt.compare(password, employee.password_hash);
+    const isValidPassword = await bcrypt.compare(password, employee.passwordHash);
     
     if (!isValidPassword) {
       return null;
     }
     
-    return this.mapDbRowToEmployee(employee);
+    return this.excludePassword(employee);
   }
 
-  private mapDbRowToEmployee(row: any): Employee {
+  async getEmployeesByDepartment(department: string, page: number = 1, limit: number = 10): Promise<{
+    employees: EmployeeWithoutPassword[];
+    total: number;
+    page: number;
+    totalPages: number;
+  }> {
+    return this.getAllEmployees(page, limit, department);
+  }
+
+  async getSubordinates(managerId: number): Promise<EmployeeWithoutPassword[]> {
+    const subordinates = await prisma.employee.findMany({
+      where: {
+        managerId,
+        status: { not: EmployeeStatus.TERMINATED }
+      },
+      orderBy: { firstName: 'asc' }
+    });
+    
+    return subordinates.map(emp => this.excludePassword(emp));
+  }
+
+  private excludePassword(employee: Employee & any): EmployeeWithoutPassword {
+    const { passwordHash, ...employeeWithoutPassword } = employee;
     return {
-      id: row.id,
-      firstName: row.first_name,
-      lastName: row.last_name,
-      email: row.email,
-      phone: row.phone,
-      department: row.department,
-      position: row.position,
-      salary: parseFloat(row.salary),
-      hireDate: row.hire_date,
-      status: row.status,
-      managerId: row.manager_id,
-      address: row.address ? JSON.parse(row.address) : undefined,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
+      ...employeeWithoutPassword,
+      status: this.mapEnumToStatus(employee.status)
     };
   }
 
-  private camelToSnakeCase(str: string): string {
-    return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+  private mapStatusToEnum(status: string): EmployeeStatus {
+    switch (status.toLowerCase()) {
+      case 'active': return EmployeeStatus.ACTIVE;
+      case 'inactive': return EmployeeStatus.INACTIVE;
+      case 'terminated': return EmployeeStatus.TERMINATED;
+      default: return EmployeeStatus.ACTIVE;
+    }
+  }
+
+  private mapEnumToStatus(status: EmployeeStatus): string {
+    switch (status) {
+      case EmployeeStatus.ACTIVE: return 'active';
+      case EmployeeStatus.INACTIVE: return 'inactive';
+      case EmployeeStatus.TERMINATED: return 'terminated';
+      default: return 'active';
+    }
   }
 }

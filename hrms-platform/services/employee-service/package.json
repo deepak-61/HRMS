@@ -6,8 +6,16 @@
   "scripts": {
     "start": "node dist/server.js",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "build": "tsc",
-    "test": "jest"
+    "build": "npx prisma generate && tsc",
+    "test": "jest",
+    "db:migrate": "npx prisma migrate dev",
+    "db:generate": "npx prisma generate",
+    "db:seed": "npx prisma db seed",
+    "db:studio": "npx prisma studio",
+    "db:reset": "npx prisma migrate reset"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.15.0",

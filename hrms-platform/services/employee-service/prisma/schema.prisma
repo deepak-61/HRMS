@@ -1,0 +1,47 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Employee {
+  id            Int      @id @default(autoincrement())
+  firstName     String   @map("first_name") @db.VarChar(50)
+  lastName      String   @map("last_name") @db.VarChar(50)
+  email         String   @unique @db.VarChar(100)
+  phone         String   @db.VarChar(20)
+  department    String   @db.VarChar(50)
+  position      String   @db.VarChar(50)
+  salary        Decimal  @db.Decimal(10, 2)
+  hireDate      DateTime @map("hire_date")
+  status        EmployeeStatus @default(ACTIVE)
+  managerId     Int?     @map("manager_id")
+  passwordHash  String   @map("password_hash") @db.VarChar(255)
+  address       Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  manager       Employee? @relation("EmployeeManager", fields: [managerId], references: [id])
+  subordinates  Employee[] @relation("EmployeeManager")
+
+  @@map("employees")
+  @@index([email])
+  @@index([department])
+  @@index([status])
+  @@index([managerId])
+}
+
+enum EmployeeStatus {
+  ACTIVE    @map("active")
+  INACTIVE  @map("inactive")
+  TERMINATED @map("terminated")
+
+  @@map("employee_status")
+}
