@@ -1,0 +1,94 @@
+version: '3.9'
+services:
+  auth-service:
+    build: ./services/auth-service
+    ports:
+      - "4001:4001"
+    environment:
+      - PORT=4001
+      - NODE_ENV=development
+      - DATABASE_URL=postgres://auth_user:auth_pass@auth-db:5432/auth_db
+      - JWT_SECRET=changeme
+    depends_on:
+      - auth-db
+    networks:
+      - hrs_net
+
+  hr-service:
+    build: ./services/hr-service
+    ports:
+      - "4002:4002"
+    environment:
+      - PORT=4002
+      - NODE_ENV=development
+      - DATABASE_URL=postgres://hr_user:hr_pass@hr-db:5432/hr_db
+      - AUTH_PUBLIC_KEY=
+      - AUTH_JWKS_URL=
+    depends_on:
+      - hr-db
+      - auth-service
+    networks:
+      - hrs_net
+
+  rag-service:
+    build: ./services/rag-service
+    ports:
+      - "4003:4003"
+    environment:
+      - PORT=4003
+      - NODE_ENV=development
+      - MONGO_URL=mongodb://rag_user:rag_pass@mongo:27017/
+      - MONGO_DB=rag
+      - EMBEDDING_MODEL=all-MiniLM-L6-v2
+    depends_on:
+      - mongo
+    networks:
+      - hrs_net
+
+  auth-db:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=auth_db
+      - POSTGRES_USER=auth_user
+      - POSTGRES_PASSWORD=auth_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+    networks:
+      - hrs_net
+
+  hr-db:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=hr_db
+      - POSTGRES_USER=hr_user
+      - POSTGRES_PASSWORD=hr_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - hr_db_data:/var/lib/postgresql/data
+    networks:
+      - hrs_net
+
+  mongo:
+    image: mongo:7
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=rag_user
+      - MONGO_INITDB_ROOT_PASSWORD=rag_pass
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - hrs_net
+
+volumes:
+  auth_db_data:
+  hr_db_data:
+  mongo_data:
+
+networks:
+  hrs_net:
+    driver: bridge
+
